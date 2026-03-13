@@ -1,0 +1,288 @@
+{
+  "name": "AI-Powered Job Research Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "f8a7504b-fcc6-4f25-aded-9562ff9374a0",
+        "formTitle": "Job Research Preferences",
+        "formDescription": "Enter your desired role, location, and seniority to automatically find and extract matching opportunities.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Job Title",
+              "placeholder": "e.g. Software Engineer, Product Manager",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Location",
+              "fieldType": "string",
+              "placeholder": "e.g. New York, London, Worldwide",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Work Type",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Hybrid"
+                  },
+                  {
+                    "option": "Remote"
+                  },
+                  {
+                    "option": "Onsite"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Seniority Level",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Junior"
+                  },
+                  {
+                    "option": "Associate"
+                  },
+                  {
+                    "option": "Senior"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "form-trigger",
+      "name": "n8n Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "position": [
+        0,
+        304
+      ],
+      "typeVersion": 2,
+      "webhookId": "f8a7504b-fcc6-4f25-aded-9562ff9374a0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional search query generator. Generate a highly effective Google search query to find job postings and company careers pages based on the user's preferences. Output ONLY the search query string, no quotes, no explanations. Use boolean operators if helpful.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Job Title:{{ $json['Job Title'] }} \\nLocation:{{ $json.Location }} \\nWork Type:{{ $json['Work Type'] }} \\nSeniority: {{ $json['Seniority Level'] }}\"\n    }\n  ],\n  \"temperature\": 0.3,\n  \"max_tokens\": 100\n}",
+        "options": {}
+      },
+      "id": "generate-query",
+      "name": "Groq: Generate Search Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        256,
+        304
+      ],
+      "typeVersion": 4.1
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "YOUR_SERPER_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ q: $json.choices[0].message.content, num: 20 }) }}\n",
+        "options": {}
+      },
+      "id": "search-api",
+      "name": "Search API (Serper)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        512,
+        304
+      ],
+      "typeVersion": 4.1
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [ { role: 'system', content: 'You are an expert data extractor. Extract relevant job opportunities and company data from the provided search results.\\nFor each job, extract:\\n- Company Name\\n- Website\\n- Location\\n- Employee Count (if mentioned, else leave blank)\\n- Job URL\\n\\nReturn ONLY a JSON array of objects with keys: companyName, website, location, employeeCount, jobUrl. Do not include markdown formatting like ```json ... ```, just output the raw JSON array starting with \"[\" and ending with \"]\".' }, { role: 'user', content: JSON.stringify($json.organic.slice(0, 10).map(i => ({ title: i.title, link: i.link, snippet: i.snippet }))) } ], temperature: 0.1 }) }}\n",
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Groq: Extract Job Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        752,
+        304
+      ],
+      "typeVersion": 4.1
+    },
+    {
+      "parameters": {
+        "jsCode": "let rawText = $input.first().json.choices[0].message.content;\n// Remove markdown blocks if groq added them anyway\nrawText = rawText.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '');\n\nlet extractedData = [];\ntry {\n  extractedData = JSON.parse(rawText);\n} catch (error) {\n  throw new Error('Failed to parse Groq output as JSON: ' + rawText);\n}\n\nif (!Array.isArray(extractedData)) {\n  extractedData = [extractedData];\n}\n\n// Add timestamp to each item\nconst now = new Date().toISOString();\nconst results = extractedData.map(item => {\n  item.Timestamp = now;\n  return { json: item };\n});\n\nreturn results;"
+      },
+      "id": "parse-data",
+      "name": "Parse & Format Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1008,
+        304
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "mapAutomatically",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "google-sheets",
+      "name": "Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [
+        1264,
+        304
+      ],
+      "typeVersion": 4.1,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "n8n Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Groq: Generate Search Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq: Generate Search Query": {
+      "main": [
+        [
+          {
+            "node": "Search API (Serper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search API (Serper)": {
+      "main": [
+        [
+          {
+            "node": "Groq: Extract Job Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq: Extract Job Data": {
+      "main": [
+        [
+          {
+            "node": "Parse & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
