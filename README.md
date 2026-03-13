@@ -2,8 +2,7 @@
 
 An intelligent, automated workflow designed to streamline job hunting. This n8n workflow uses Large Language Models (LLMs) and search APIs to find, extract, and organize job opportunities into a structured Google Sheet based on your personal preferences.
 
-![n8n Workflow Screenshot](https://raw.githubusercontent.com/[YOUR_USERNAME]/AI-powered-Job-Search-Automation-n8n/main/workflow-screenshot.png)
-*Placeholder: Replace the URL above with your actual screenshot path after uploading it to GitHub.*
+![n8n Workflow Screenshot](Screenshot%202026-03-13%20162842.png)
 
 ## Features
 
